@@ -9,6 +9,7 @@
 
 # Do not ignore exceptions from the following sub-folders
 !sw/
+!data/
 
 # The following file types are treated as exceptions
 
