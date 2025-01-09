@@ -1,0 +1,27 @@
+
+# Ignore all files by default
+*
+
+# Apply exceptions to the following
+
+# Updates to .gitignore
+!.gitignore
+
+# Do not ignore exceptions from the following sub-folders
+!sw/
+
+# The following file types are treated as exceptions
+
+# Markdown, PNG, text and pdf files for documentation
+!*.md
+!*.png
+!*.txt
+!*.pdf
+
+# Software model files
+![Mm]akefile
+!*.c
+!*.cc
+!*.cpp
+
+
