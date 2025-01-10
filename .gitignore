@@ -11,6 +11,9 @@
 !sw/
 !data/
 
+# Include subdirectories inside data/ but ignore files in them
+!data/**/
+
 # The following file types are treated as exceptions
 
 # Markdown, PNG, text and pdf files for documentation
