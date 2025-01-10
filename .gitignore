@@ -19,7 +19,6 @@
 # Markdown, PNG, text and pdf files for documentation
 !*.md
 !*.png
-!*.ppm
 !*.mp4
 !*.txt
 !*.pdf
