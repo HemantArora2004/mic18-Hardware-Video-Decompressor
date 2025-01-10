@@ -16,6 +16,7 @@
 # Markdown, PNG, text and pdf files for documentation
 !*.md
 !*.png
+!*.ppm
 !*.txt
 !*.pdf
 
@@ -24,5 +25,5 @@
 !*.c
 !*.cc
 !*.cpp
-
+!*.py
 
