@@ -162,5 +162,42 @@ void horizontalDownsampling(ImageData* image_data){
 			- 0.102 * (image_data->v_image[i*width + jm3] + image_data->v_image[i*width + jp3])
 			+ 0.043 * (image_data->v_image[i*width + jm5] + image_data->v_image[i*width + jp5]);
 	}
+}
 
+void DCT(ImageData* image_data){
+    int color, width_temp;
+    double red, blue, green, dct_coeff[8][8], temp_matrix[8][8], *d_ptr;
+
+    int width = image_data->width;
+    int height = image_data->height;
+    
+    for (int i=0; i<8; i++) {	//cache the DCT coefficients
+		red = (i==0) ? sqrt(1.0/8.0) : sqrt(2.0/8.0);	//the leading coefficient in front of the cosine
+		for (int j=0; j<8; j++) dct_coeff[i][j] = red * cos(M_PI/8.0*i*(j+0.5));
+	}
+	for (color=0; color<3; color++) {
+		if (color==0) {			//Y
+			d_ptr = y_image;	//provide a reference to the y_image array
+			width_temp = width;		//original width
+		}
+		else if (color==1) {	//downsampled U
+			d_ptr = downsampled_u_image;
+			width_temp = width / 2;	//half the original width
+		}
+		else {					//downsampled V
+			d_ptr = downsampled_v_image;
+			width_temp = width / 2;	//half the original width
+		}
+		//now do the matrix multiplications
+		for (int i=0; i<height; i+=8) for (int j=0; j<width_temp; j+=8) {	//i*width_temp+j is the address of the top left corner of the current 8x8 block
+			for (int k=0; k<8; k++) for (int m=0; m<8; m++) {		//first matrix multiplication C * S, write to temp_matrix
+				temp_matrix[k][m] = 0.0;
+				for (int n=0; n<8; n++) temp_matrix[k][m] += dct_coeff[k][n] * d_ptr[(i+n)*width_temp+j+m];	//across C, down S (row i+n, column j+m)
+			}
+			for (int k=0; k<8; k++) for (int m=0; m<8; m++) {		//second matrix multiplication (C*S) * C^T, read from temp_matrix
+				d_ptr[(i+k)*width_temp+j+m] = 0.0;			//row i+k, column j+m
+				for (n=0; n<8; n++) d_ptr[(i+k)*width_temp+j+m] += temp_matrix[k][n] * dct_coeff[m][n];	//across C*S, down C^T (or across C)
+			}
+		}
+	}
 }

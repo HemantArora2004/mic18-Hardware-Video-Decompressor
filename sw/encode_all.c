@@ -295,3 +295,21 @@ void write_bits(FILE *fp, unsigned int data, int length) {	//can write up to 32 
 		}
 	}
 }
+
+void convertRGBToYUV(float* y_image, float* u_image, float* v_image, int width, int height) {
+    for (int i = 0; i < height; i++) {
+        for (int j = 0; j < width; j++) {
+            int index = i * width + j;
+            
+            // Hold on to RGB values before overwriting
+            float red = y_image[index];
+            float green = u_image[index];
+            float blue = v_image[index];
+            
+            // Convert RGB to YUV
+            y_image[index] = 0.257 * red + 0.504 * green + 0.098 * blue + 16.0;
+            u_image[index] = -0.148 * red - 0.291 * green + 0.439 * blue + 128.0;
+            v_image[index] = 0.439 * red - 0.368 * green - 0.071 * blue + 128.0;
+        }
+    }
+}
