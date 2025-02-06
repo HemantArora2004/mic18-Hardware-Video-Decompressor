@@ -50,21 +50,21 @@ int main(int argc, char **argv) {
 	
 	//read input file header, "deadbeef", after this, msb indicates quantization matrix, next 15 bits is width, last 16 bits is height
 	i = fgetc(file_ptr);
-	if (i==EOF || i!=0xde) { printf("unexpected data read from input file header, exiting...\n"); exit(1); }
+	if (i==EOF || i!=0xde) { printf("1unexpected data read from input file header, exiting...\n"); exit(1); }
 	i = fgetc(file_ptr);
-	if (i==EOF || i!=0xad) { printf("unexpected data read from input file header, exiting...\n"); exit(1); }
+	if (i==EOF || i!=0xad) { printf("2unexpected data read from input file header, exiting...\n"); exit(1); }
 	i = fgetc(file_ptr);
-	if (i==EOF || i!=0xbe) { printf("unexpected data read from input file header, exiting...\n"); exit(1); }
+	if (i==EOF || i!=0xbe) { printf("3unexpected data read from input file header, exiting...\n"); exit(1); }
 	i = fgetc(file_ptr);
-	if (i==EOF || i!=0xef) { printf("unexpected data read from input file header, exiting...\n"); exit(1); }
+	if (i==EOF || i!=0xef) { printf("4unexpected data read from input file header, exiting...\n"); exit(1); }
 	i = fgetc(file_ptr);
 	j = fgetc(file_ptr);
-	if (i==EOF || j==EOF) { printf("unexpected data read from input file header, exiting...\n"); exit(1); }
+	if (i==EOF || j==EOF) { printf("5unexpected data read from input file header, exiting...\n"); exit(1); }
 	quantization_choice = (i>>7) & 1;
 	width = ((i & 0x7f) << 8) | (j & 0xff);		//7 lsb of i concatenated with 8 lsb of j
 	i = fgetc(file_ptr);
 	j = fgetc(file_ptr);
-	if (i==EOF || j==EOF) { printf("unexpected data read from input file header, exiting...\n"); exit(1); }
+	if (i==EOF || j==EOF) { printf("6unexpected data read from input file header, exiting...\n"); exit(1); }
 	height = ((i & 0xff) << 8) | (j & 0xff);	//8 lsb of i concatenated with 8 lsb of j
 	if ((height%8)!=0 || (width%8)!=0) { printf("error: height and width must be some multiple of 8, exiting...\n"); exit(1); }
 	if (height!=240 || width!=320) printf("warning: height and width are not the expected 240 and 320, got %d and %d\n", height, width);

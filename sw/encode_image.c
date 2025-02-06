@@ -18,92 +18,126 @@ typedef struct {
 } ImageData;
 
 void write_bits(FILE *fp, unsigned int data, int length);	//function prototype
-ImageData getImage(const char* input_filename); 
-void convertRGBToYUV(ImageData* image_data); 
-void horizontalDownsampling(ImageData* image_data);
-void quantizationAndEncoding(FILE *file_ptr, ImageData* image_data, int quantization_choice);
+ImageData getImage(const char* inputFilename); 
+void delImage(ImageData* imageData);
+void convertRGBToYUV(ImageData* imageData); 
+void horizontalDownsampling(ImageData* imageData);
+void DCT(ImageData* imageData);
+void quantizationAndEncoding(FILE *file_ptr, ImageData* imageData, int quantizationChoice);
 
 int main(int argc, char **argv) {
 	int i, j, k, m, n, color, width, height, jm5, jm3, jm1, jp1, jp3, jp5, quantized[64], q[15], width_temp;
-	char input_filename[200], output_filename[200], temp_string[100], quantization_choice;
-	double *y_image, *u_image, *v_image, *downsampled_u_image, *downsampled_v_image, red, blue, green, dct_coeff[8][8], temp_matrix[8][8], *d_ptr;
 	FILE *file_ptr;
+	char inputFilename[200], output_filename[200], temp_string[100], quantizationChoice;
 	const int zigzag_order[] = {0, 1, 8,16, 9, 2, 3,10,17,24,32,25,18,11, 4, 5,12,19,26,33,40,48,41,34,27,20,13, 6, 7,14,21,28,
 	                           35,42,49,56,57,50,43,36,29,22,15,23,30,37,44,51,58,59,52,45,38,31,39,46,53,60,61,54,47,55,62,63};
 	const int Q0[] = {8,4,8,8,16,16,32,32,64,64,64,64,64,64,64};
 	const int Q1[] = {8,2,2,2,4,4,8,8,16,16,16,32,32,32,32};
-}
 
 
-void write_bits(FILE *fp, unsigned int data, int length) {	//can write up to 32 bits at once, the least significant "length" bits of "data" will be written
-	static unsigned short buffer=0;	//buffer can hold up to 16 bits, 2 bytes are written together since SRAM is 16 bits wide
-	static unsigned char count=0;	//count is number of bits in use in buffer
-	
-	while (length>0) {
-		length--;
-		buffer = (buffer<<1) | ((data>>length) & 1);	//extract bit "length-1", buffer acts like a shift register in hardware
-		count++;
-		if (count==16) {	//16 bits in buffer, write high byte, then low byte
-			fputc((buffer>>8) & 0xff, fp);
-			fputc(buffer & 0xff, fp);
-			count = 0;
-		}
+	// get input file name either from first command line argument or from the user interface (command prompt)
+	if (argc<2) {
+		printf("enter the input file name including the .ppm extension: ");
+		fscanf(stdin, "%s", inputFilename);
 	}
+	else strcpy(inputFilename, argv[1]);
+	
+	// get output file name either from second command line argument or from the user interface (command prompt)
+	if (argc<3) {
+		printf("enter the output file name including the .mic18 extension: ");
+		fscanf(stdin, "%s", output_filename);
+	}
+	else strcpy(output_filename, argv[2]);
+	
+	// whether to use quantization matrix 0 or 1
+	if (argc<4) {
+		printf("enter 0 to use quantization matrix Q0, otherwise Q1 will be used: ");
+		fscanf(stdin, "%s", temp_string);
+		quantizationChoice = (temp_string[0]=='0') ? 0 : 1;
+	}
+	else quantizationChoice = (argv[3][0]=='0') ? 0 : 1;
+
+	// open output file and write header
+	file_ptr = fopen(output_filename, "wb");
+	if (file_ptr==NULL) {
+		printf("can't open file %s for binary writing, exiting...\n", output_filename);
+		exit(1);
+	}
+
+
+	// Encode Image
+	ImageData myImage = getImage(inputFilename);
+
+	fputc(0xde, file_ptr);	//"deadbeef" header
+	fputc(0xad, file_ptr);
+	fputc(0xbe, file_ptr);
+	fputc(0xef, file_ptr);
+	fputc( ((quantizationChoice&1)<<7) | ((myImage.width>>8)&0x7f) , file_ptr);	//msb specifies quantization matrix, 15 lsb is width
+	fputc(myImage.width & 0xff, file_ptr);
+	fputc((myImage.height>>8) & 0xff, file_ptr);	//16 bits for height
+	fputc(myImage.height & 0xff, file_ptr);
+
+	convertRGBToYUV(&myImage);
+	horizontalDownsampling(&myImage);
+	DCT(&myImage);
+	quantizationAndEncoding(file_ptr, &myImage, quantizationChoice);
+	delImage(&myImage);
+
+	write_bits(file_ptr, 0, 15);	//write 15 zeros so that if the buffer is not full, this will force the last bits to be written to the file
+	fclose(file_ptr);				//but if buffer is empty, another 2 bytes will not be written
+
+	printf("done :)\n");
 }
 
-ImageData getImage(const char* input_filename) {
+ImageData getImage(const char* inputFilename) {
     FILE* file_ptr;
     char temp_string[100];
-    int i, j;
-    ImageData image_data;
+    int i, j, width, height;
+    ImageData imageData;
 
     // Open input file
-    file_ptr = fopen(input_filename, "rb");
+    file_ptr = fopen(inputFilename, "rb");
     if (file_ptr == NULL) {
-        printf("Can't open file %s for binary reading, exiting...\n", input_filename);
+        printf("Can't open file %s for binary reading, exiting...\n", inputFilename);
         exit(1);
     } else {
-        printf("Opened input file %s\n", input_filename);
+        printf("Opened input file %s\n", inputFilename);
     }
 
     // Read and check header of image
     fscanf(file_ptr, "%s", temp_string);
-    if (strcmp(temp_string, "P6") != 0) {
-        printf("Unexpected image type, expected P6, got %s, exiting...\n", temp_string);
-        exit(1);
-    }
+	if (strcmp(temp_string, "P6")!=0) { printf("unexpected image type, expect P6, got %s, exiting...", temp_string); exit(1); }
+	fscanf(file_ptr, "%d", &width);
+	if (width < 0 || (width & 7)!=0) { printf("invalid width of image, must be a positive integer divisible by 8, got %d, exiting...\n", width); exit(1); }
+	fscanf(file_ptr, "%d", &height);
+	if (width < 0 || (width & 7)!=0) { printf("invalid height of image, must be a positive integer divisible by 8, got %d, exiting...\n", height); exit(1); }
+	if (width!=320 || height!=240) printf("warning, width and height are not the expected values of 320 and 240, got %d and %d\n", width, height);
+	fscanf(file_ptr, "%s", temp_string);
+	if (strcmp(temp_string, "255")!=0) { printf("unexpected maximum number of colors, expect 255, got %s, exiting...", temp_string); exit(1); }
+	fgetc(file_ptr);	//new line
 
-    if (image_data.width != 640 || image_data.height != 480) {
-        printf("Warning, width and height are not the expected values of 320 and 240, got %d and %d\n", image_data.width, image_data.height);
-    }
-
-    fscanf(file_ptr, "%s", temp_string);
-    if (strcmp(temp_string, "255") != 0) {
-        printf("Unexpected maximum number of colors, expect 255, got %s, exiting...\n", temp_string);
-        exit(1);
-    }
-
-    fgetc(file_ptr);  // New line
+	imageData.width = width;
+	imageData.height = height;
 
     // Allocate memory for image data
-    image_data.y_image = (double*)malloc(sizeof(double) * image_data.width * image_data.height);
-    image_data.u_image = (double*)malloc(sizeof(double) * image_data.width * image_data.height);
-    image_data.v_image = (double*)malloc(sizeof(double) * image_data.width * image_data.height);
-    image_data.downsampled_u_image = (double*)malloc(sizeof(double) * image_data.width * image_data.height / 2);
-    image_data.downsampled_v_image = (double*)malloc(sizeof(double) * image_data.width * image_data.height / 2);
+    imageData.y_image = (double*)malloc(sizeof(double) * imageData.width * imageData.height);
+    imageData.u_image = (double*)malloc(sizeof(double) * imageData.width * imageData.height);
+    imageData.v_image = (double*)malloc(sizeof(double) * imageData.width * imageData.height);
+    imageData.downsampled_u_image = (double*)malloc(sizeof(double) * imageData.width * imageData.height / 2);
+    imageData.downsampled_v_image = (double*)malloc(sizeof(double) * imageData.width * imageData.height / 2);
 
-    if (image_data.y_image == NULL || image_data.u_image == NULL || image_data.v_image == NULL ||
-        image_data.downsampled_u_image == NULL || image_data.downsampled_v_image == NULL) {
+    if (imageData.y_image == NULL || imageData.u_image == NULL || imageData.v_image == NULL ||
+        imageData.downsampled_u_image == NULL || imageData.downsampled_v_image == NULL) {
         printf("malloc failed :(\n");
         exit(1);
     }
 
     // Read image data (RGB in PPM format)
-    for (i = 0; i < image_data.height; i++) {
-        for (j = 0; j < image_data.width; j++) {
-            image_data.y_image[i * image_data.width + j] = (double)fgetc(file_ptr);  // red
-            image_data.u_image[i * image_data.width + j] = (double)fgetc(file_ptr);  // green
-            image_data.v_image[i * image_data.width + j] = (double)fgetc(file_ptr);  // blue
+    for (i = 0; i < imageData.height; i++) {
+        for (j = 0; j < imageData.width; j++) {
+            imageData.y_image[i * imageData.width + j] = (double)fgetc(file_ptr);  // red
+            imageData.u_image[i * imageData.width + j] = (double)fgetc(file_ptr);  // green
+            imageData.v_image[i * imageData.width + j] = (double)fgetc(file_ptr);  // blue
         }
     }
 
@@ -114,14 +148,22 @@ ImageData getImage(const char* input_filename) {
     fclose(file_ptr);
 
     // Return the struct containing the image data
-    return image_data;
+    return imageData;
 }
 
-void convertRGBToYUV(ImageData* image_data) {
+void delImage(ImageData* imageData){
+	free(imageData->y_image);
+	free(imageData->u_image);
+	free(imageData->v_image);
+	free(imageData->downsampled_u_image);
+	free(imageData->downsampled_v_image);
+}
+
+void convertRGBToYUV(ImageData* imageData) {
     int i , j;
 
-    int width = image_data->width;
-    int height = image_data->height;
+    int width = imageData->width;
+    int height = imageData->height;
     
     // Loop through each pixel in the image and convert from RGB to YUV
     for (i = 0; i < height; i++) {
@@ -129,23 +171,23 @@ void convertRGBToYUV(ImageData* image_data) {
             int index = i * width + j;
 
             // Retrieve RGB values (assuming RGB are stored in y_image, u_image, and v_image)
-            float red = (float)image_data->y_image[index];   // Store red in y_image temporarily
-            float green = (float)image_data->u_image[index]; // Store green in u_image temporarily
-            float blue = (float)image_data->v_image[index];  // Store blue in v_image temporarily
+            float red = (float)imageData->y_image[index];   // Store red in y_image temporarily
+            float green = (float)imageData->u_image[index]; // Store green in u_image temporarily
+            float blue = (float)imageData->v_image[index];  // Store blue in v_image temporarily
             
             // Convert RGB to YUV
-            image_data->y_image[index] = 0.257 * red + 0.504 * green + 0.098 * blue + 16.0;
-            image_data->u_image[index] = -0.148 * red - 0.291 * green + 0.439 * blue + 128.0;
-            image_data->v_image[index] = 0.439 * red - 0.368 * green - 0.071 * blue + 128.0;
+            imageData->y_image[index] = 0.257 * red + 0.504 * green + 0.098 * blue + 16.0;
+            imageData->u_image[index] = -0.148 * red - 0.291 * green + 0.439 * blue + 128.0;
+            imageData->v_image[index] = 0.439 * red - 0.368 * green - 0.071 * blue + 128.0;
         }
     }
 }
 
-void horizontalDownsampling(ImageData* image_data){
+void horizontalDownsampling(ImageData* imageData){
     int jm5, jm3, jm1, jp1, jp3, jp5, i , j;
 
-    int width = image_data->width;
-    int height = image_data->height;
+    int width = imageData->width;
+    int height = imageData->height;
 
     for (i = 0; i < height; i++) 
         for (j = 0; j < width; j+=2) {	//even j (columns) only
@@ -155,24 +197,24 @@ void horizontalDownsampling(ImageData* image_data){
 		jp1 = ((j+1) > (width-1)) ? (width-1) : (j+1);
 		jp3 = ((j+3) > (width-1)) ? (width-1) : (j+3);
 		jp5 = ((j+5) > (width-1)) ? (width-1) : (j+5);
-		image_data->downsampled_u_image[i*width/2 + j/2] = 0.5 * image_data->u_image[i*width + j]
-			+ 0.311 * (image_data->u_image[i*width + jm1] + image_data->u_image[i*width + jp1])
-			- 0.102 * (image_data->u_image[i*width + jm3] + image_data->u_image[i*width + jp3])
-			+ 0.043 * (image_data->u_image[i*width + jm5] + image_data->u_image[i*width + jp5]);
+		imageData->downsampled_u_image[i*width/2 + j/2] = 0.5 * imageData->u_image[i*width + j]
+			+ 0.311 * (imageData->u_image[i*width + jm1] + imageData->u_image[i*width + jp1])
+			- 0.102 * (imageData->u_image[i*width + jm3] + imageData->u_image[i*width + jp3])
+			+ 0.043 * (imageData->u_image[i*width + jm5] + imageData->u_image[i*width + jp5]);
 			
-		image_data->downsampled_v_image[i*width/2 + j/2] = 0.5 * image_data->v_image[i*width + j]
-			+ 0.311 * (image_data->v_image[i*width + jm1] + image_data->v_image[i*width + jp1])
-			- 0.102 * (image_data->v_image[i*width + jm3] + image_data->v_image[i*width + jp3])
-			+ 0.043 * (image_data->v_image[i*width + jm5] + image_data->v_image[i*width + jp5]);
+		imageData->downsampled_v_image[i*width/2 + j/2] = 0.5 * imageData->v_image[i*width + j]
+			+ 0.311 * (imageData->v_image[i*width + jm1] + imageData->v_image[i*width + jp1])
+			- 0.102 * (imageData->v_image[i*width + jm3] + imageData->v_image[i*width + jp3])
+			+ 0.043 * (imageData->v_image[i*width + jm5] + imageData->v_image[i*width + jp5]);
 	}
 }
 
-void DCT(ImageData* image_data){
+void DCT(ImageData* imageData){
     int color, width_temp, i, j, k, m, n;
     double red, blue, green, dct_coeff[8][8], temp_matrix[8][8], *d_ptr;
 
-    int width = image_data->width;
-    int height = image_data->height;
+    int width = imageData->width;
+    int height = imageData->height;
     
     for (i=0; i<8; i++) {	//cache the DCT coefficients
 		red = (i==0) ? sqrt(1.0/8.0) : sqrt(2.0/8.0);	//the leading coefficient in front of the cosine
@@ -180,15 +222,15 @@ void DCT(ImageData* image_data){
 	}
 	for (color=0; color<3; color++) {
 		if (color==0) {			//Y
-			d_ptr = image_data->y_image;	//provide a reference to the y_image array
+			d_ptr = imageData->y_image;	//provide a reference to the y_image array
 			width_temp = width;		//original width
 		}
 		else if (color==1) {	//downsampled U
-			d_ptr = image_data->downsampled_u_image;
+			d_ptr = imageData->downsampled_u_image;
 			width_temp = width / 2;	//half the original width
 		}
 		else {					//downsampled V
-			d_ptr = image_data->downsampled_v_image;
+			d_ptr = imageData->downsampled_v_image;
 			width_temp = width / 2;	//half the original width
 		}
 		//now do the matrix multiplications
@@ -205,7 +247,7 @@ void DCT(ImageData* image_data){
 	}
 }
 
-void quantizationAndEncoding(FILE *file_ptr, ImageData* image_data, int quantization_choice){
+void quantizationAndEncoding(FILE *file_ptr, ImageData* imageData, int quantizationChoice){
     int i, j, k, m, n, color, quantized[64], q[15], width_temp;
     double *d_ptr;
     const int zigzag_order[] = {0, 1, 8,16, 9, 2, 3,10,17,24,32,25,18,11, 4, 5,12,19,26,33,40,48,41,34,27,20,13, 6, 7,14,21,28,
@@ -213,21 +255,21 @@ void quantizationAndEncoding(FILE *file_ptr, ImageData* image_data, int quantiza
 	const int Q0[] = {8,4,8,8,16,16,32,32,64,64,64,64,64,64,64};
 	const int Q1[] = {8,2,2,2,4,4,8,8,16,16,16,32,32,32,32};
 
-    int width = image_data->width;
-    int height = image_data->height;
+    int width = imageData->width;
+    int height = imageData->height;
 
-    for (i=0; i<15; i++) q[i] = (quantization_choice==0) ? Q0[i] : Q1[i];	//load q with the appropriate pre-defined values
+    for (i=0; i<15; i++) q[i] = (quantizationChoice==0) ? Q0[i] : Q1[i];	//load q with the appropriate pre-defined values
 	for (color=0; color<3; color++) {
 		if (color==0) {			//Y
-			d_ptr = image_data->y_image;	//provide a reference to the y_image array
+			d_ptr = imageData->y_image;	//provide a reference to the y_image array
 			width_temp = width;
 		}
 		else if (color==1) {	//downsampled U - half the original width
-			d_ptr = image_data->downsampled_u_image;
+			d_ptr = imageData->downsampled_u_image;
 			width_temp = width / 2;
 		}
 		else {					//downsampled V
-			d_ptr = image_data->downsampled_v_image;
+			d_ptr = imageData->downsampled_v_image;
 			width_temp = width / 2;
 		}
 		//now do the quantization and encoding
