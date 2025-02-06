@@ -8,9 +8,14 @@
 !.gitignore
 
 # Do not ignore exceptions from the following sub-folders
-!sw/
+!board/
 !data/
-
+!doc/
+!/rtl
+!/sim
+!/sw
+!/syn
+!/tb
 # Include subdirectories inside data/ but ignore files in them
 !data/**/
 
@@ -30,3 +35,7 @@
 !*.cpp
 !*.py
 
+# Hardware files
+!*.sv
+!*.xdc
+!*.xpr
